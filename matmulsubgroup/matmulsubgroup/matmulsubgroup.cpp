@@ -29,8 +29,10 @@ float expected[M_SIZE * N_SIZE];
 
 enum DataType {
     FloatType,
+    FloatSharedType,
     Vec2Type,
-    Vec4Type
+    Vec4Type,
+    Vec4SharedType
 };
 
 DataType dataType = FloatType;
@@ -182,13 +184,21 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
 
-    if (lpCmdLine == L"vec4")
+    if (wcscmp(lpCmdLine, L"vec4") == 0)
     {
         dataType = Vec4Type;
     }
-    else if (lpCmdLine == L"vec2")
+    else if (wcscmp(lpCmdLine, L"vec2") == 0)
     {
         dataType = Vec2Type;
+    }
+    else if (wcscmp(lpCmdLine, L"vec4shared") == 0)
+    {
+        dataType = Vec4SharedType;
+    }
+    else if (wcscmp(lpCmdLine, L"floatshared") == 0)
+    {
+        dataType = FloatSharedType;
     }
     else
     {
@@ -525,6 +535,14 @@ void MatMulSubgroupApp::DoComputeWork()
     {
         mCommandList->Dispatch(N_SIZE / 32, M_SIZE, 1);
     }
+    else if (dataType == Vec4SharedType)
+    {
+        mCommandList->Dispatch(N_SIZE / 64, (M_SIZE - 1) / 16 + 1, 1);
+    }
+    else if (dataType == FloatSharedType)
+    {
+        mCommandList->Dispatch((N_SIZE - 1) / 16 + 1, (M_SIZE - 1) / 16 + 1, 1);
+    }
     else
     {
         mCommandList->Dispatch(N_SIZE / 16, M_SIZE, 1);
@@ -675,6 +693,14 @@ void MatMulSubgroupApp::BuildShadersAndInputLayout()
     else if (dataType == Vec2Type)
     {
         mShaders["matmulsubgroup"] = d3dUtil::DXCCompileShader(L"matmulsubgroupvec2.hlsl", nullptr);
+    }
+    else if (dataType == Vec4SharedType)
+    {
+        mShaders["matmulsubgroup"] = d3dUtil::DXCCompileShader(L"matmulsubgroupsharedvec4.hlsl", nullptr);
+    }
+    else if (dataType == FloatSharedType)
+    {
+        mShaders["matmulsubgroup"] = d3dUtil::DXCCompileShader(L"matmulsubgroupsharedfloat.hlsl", nullptr);
     }
     else
     {

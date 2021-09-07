@@ -1,0 +1,71 @@
+#version 450
+#extension GL_KHR_shader_subgroup_basic: enable
+#extension GL_KHR_shader_subgroup_vote: enable
+#extension GL_KHR_shader_subgroup_ballot: enable
+#extension GL_KHR_shader_subgroup_shuffle: enable
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+    
+layout(std430, set = 0, binding = 0) writeonly buffer ssbOut {
+    vec4 result[];
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer ssbA {
+	vec4 A[];
+};
+
+layout(std430, set = 0, binding = 2) readonly buffer ssbB {
+	vec4 B[];
+};
+
+const uint dimAOuter = 196;
+const uint dimInner = 384;
+const uint dimBOuter = 64;
+
+const uint width0 = dimAOuter;
+const uint width1 = dimInner;
+const uint width2 = dimBOuter;
+const int VEC_SIZE = 4;
+const uint subgroupSize = 16;
+const uint numTiles = (dimInner - 1) / (subgroupSize * VEC_SIZE) + 1;
+shared vec4 m_B[subgroupSize * VEC_SIZE][subgroupSize];
+  
+void mm_matMul() {
+	uint globalRow = gl_GlobalInvocationID.y;
+	uint globalCol = gl_GlobalInvocationID.x;
+	uint tileRow = gl_LocalInvocationID.y;
+	uint tileCol = gl_LocalInvocationID.x;	
+
+	vec4 dot00 = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+	
+	for (int t = 0; t < numTiles; t++) {
+	    const uint idxA = globalRow * width1 / VEC_SIZE + t * subgroupSize + tileCol;
+	    const vec4 arow = A[idxA];
+	    uint idxBBase = t * subgroupSize * width2;
+		for (int i = 0; i < VEC_SIZE; i++)
+		{
+		    uint idxB = idxBBase + i * subgroupSize * width2 / VEC_SIZE + tileRow * width2 / VEC_SIZE + globalCol;
+			m_B[i * subgroupSize + tileRow][tileCol] = B[idxB];
+		}
+		
+		barrier(); 
+		for (int i = 0; i < subgroupSize; i++)
+		{
+		    dot00 += subgroupShuffle(arow, i).x * m_B[4 * i][tileCol];
+			dot00 += subgroupShuffle(arow, i).y * m_B[4 * i + 1][tileCol];
+			dot00 += subgroupShuffle(arow, i).z * m_B[4 * i + 2][tileCol];
+			dot00 += subgroupShuffle(arow, i).w * m_B[4 * i + 3][tileCol];
+        }
+        barrier();
+	}
+    
+	if(globalRow < width0 && globalCol < width2 / VEC_SIZE)
+	{
+	    uint indexRes = globalRow * width2 / VEC_SIZE + globalCol;
+	    result[indexRes] = dot00;
+	}
+}
+	  
+void main() {
+	mm_matMul();
+}

@@ -1,0 +1,111 @@
+#version 450
+#extension GL_KHR_shader_subgroup_basic: enable
+#extension GL_KHR_shader_subgroup_vote: enable
+#extension GL_KHR_shader_subgroup_ballot: enable
+#extension GL_KHR_shader_subgroup_shuffle: enable
+
+      layout (local_size_x = 16,
+              local_size_y = 1,
+              local_size_z = 1) in;
+    
+
+    layout(std430, set = 0, binding = 0) writeonly buffer ssbOut {
+      vec4 result[];
+    };
+  
+
+      layout(std430, set = 0, binding = 1) readonly buffer ssbA {
+        vec4 A[];
+      };
+    
+
+      layout(std430, set = 0, binding = 2) readonly buffer ssbB {
+        vec4 B[];
+      };
+
+      const int dimAOuter = 196;
+      const int dimInner = 384;
+      const int dimBOuter = 64;
+
+      int batch;
+
+        
+      const int width0 = dimAOuter;
+      const int width1 = dimInner;
+      const int width2 = dimBOuter;
+	  const int VEC_SIZE = 4;
+  
+      void mm_matMul() {
+        int global_x = int(gl_WorkGroupID.x);
+        int global_y = int(gl_WorkGroupID.y);
+        int local_x = int(gl_LocalInvocationID.x);
+        int local_y = int(gl_LocalInvocationID.y);
+
+        vec4 dot00 = vec4(0.0f, 0.0f, 0.0f, 0.0f);
+
+        uint indexRowA = local_x + global_y * gl_WorkGroupSize.y * width1 / VEC_SIZE;
+        uint indexColB = local_x + global_x * gl_WorkGroupSize.x;
+		uint indexRes = local_x + global_x * gl_WorkGroupSize.x + global_y * gl_WorkGroupSize.y * width2 / VEC_SIZE;
+
+        uint w = 0;
+        uint indexB = indexColB;
+        uint indexA = indexRowA;
+        vec4 m_B[16 * VEC_SIZE];
+        vec4 arow;
+        do
+        {
+            bool inRange = (w + VEC_SIZE * gl_SubgroupInvocationID < width1);           
+
+            if (subgroupAll(inRange))
+            {
+                for (uint i = 0; i < gl_SubgroupSize * VEC_SIZE; i++)
+                {
+                    m_B[i] = B[indexB];
+                    indexB += width2 / VEC_SIZE;
+                }
+
+                arow = A[indexA];
+
+                for (uint i = 0; i < gl_SubgroupSize; i++)
+                {
+                    dot00 += subgroupShuffle(arow, i).x * m_B[VEC_SIZE * i];
+					dot00 += subgroupShuffle(arow, i).y * m_B[VEC_SIZE * i + 1];
+					dot00 += subgroupShuffle(arow, i).z * m_B[VEC_SIZE * i + 2];
+					dot00 += subgroupShuffle(arow, i).w * m_B[VEC_SIZE * i + 3];
+                }
+            }
+            else
+            {
+                uvec4 ballotValue = subgroupBallot(inRange);
+                uint bollotCount = subgroupBallotBitCount(ballotValue);
+                for (uint i = 0; i < bollotCount * VEC_SIZE; i++)
+                {
+                    m_B[i] = B[indexB];
+                    indexB += width2 / VEC_SIZE;
+                }
+
+                arow = A[indexA];
+
+                for (uint i = 0; i < bollotCount; i++)
+                {
+                    dot00 += subgroupShuffle(arow, i).x * m_B[VEC_SIZE * i];
+					dot00 += subgroupShuffle(arow, i).y * m_B[VEC_SIZE * i + 1];
+					dot00 += subgroupShuffle(arow, i).z * m_B[VEC_SIZE * i + 2];
+					dot00 += subgroupShuffle(arow, i).w * m_B[VEC_SIZE * i + 3];
+                }
+            }
+
+            indexA += gl_SubgroupSize;
+            w += gl_SubgroupSize * VEC_SIZE;
+        }
+        while (w < width1);
+
+        if ((local_x + global_x * gl_WorkGroupSize.x) < width2 / 4 && (local_y + global_y * gl_WorkGroupSize.y) < width0)
+        {
+          result[indexRes] = dot00;
+        }
+      }
+      void main() {
+        batch = int(gl_GlobalInvocationID.z);
+        mm_matMul();
+      }

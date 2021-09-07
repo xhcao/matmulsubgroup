@@ -86,5 +86,17 @@
     <FxCompile Include="matmulsubgroupfloat.hlsl">
       <Filter>Resource Files</Filter>
     </FxCompile>
+    <FxCompile Include="matmulsubgroupsharedfloat.hlsl">
+      <Filter>Resource Files</Filter>
+    </FxCompile>
+    <FxCompile Include="matmulsubgroupsharedvec4.hlsl">
+      <Filter>Resource Files</Filter>
+    </FxCompile>
+    <FxCompile Include="matmulsubgroupvec2.hlsl">
+      <Filter>Resource Files</Filter>
+    </FxCompile>
+    <FxCompile Include="matmulsubgroupvec4.hlsl">
+      <Filter>Resource Files</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

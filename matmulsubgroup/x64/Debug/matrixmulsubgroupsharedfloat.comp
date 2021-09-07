@@ -1,0 +1,70 @@
+#version 450
+#extension GL_KHR_shader_subgroup_basic: enable
+#extension GL_KHR_shader_subgroup_vote: enable
+#extension GL_KHR_shader_subgroup_ballot: enable
+#extension GL_KHR_shader_subgroup_shuffle: enable
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+    
+layout(std430, set = 0, binding = 0) writeonly buffer ssbOut {
+    float result[];
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer ssbA {
+	float A[];
+};
+
+layout(std430, set = 0, binding = 2) readonly buffer ssbB {
+	float B[];
+};
+
+const uint dimAOuter = 196;
+const uint dimInner = 384;
+const uint dimBOuter = 64;
+
+const uint width0 = dimAOuter;
+const uint width1 = dimInner;
+const uint width2 = dimBOuter;
+const uint subgroupSize = 16;
+const uint numTiles = (dimInner - 1) / subgroupSize + 1;
+shared float m_B[subgroupSize][subgroupSize];
+  
+void mm_matMul() {
+	uint globalRow = gl_GlobalInvocationID.y;
+	uint globalCol = gl_GlobalInvocationID.x;
+	uint tileRow = gl_LocalInvocationID.y;
+	uint tileCol = gl_LocalInvocationID.x;	
+
+	float dot00 = 0.0f;
+	
+	for (int t = 0; t < numTiles; t++) {
+	    const uint idxA = globalRow * width1 + t * subgroupSize + tileCol;
+	    const float arow = A[idxA];
+	    uint idxB = (t * subgroupSize + tileRow) * width2 + globalCol;
+		if (t * subgroupSize + tileRow < dimInner)
+		{
+		    m_B[tileRow][tileCol] = B[idxB];
+		}
+		else
+		{
+		    m_B[tileRow][tileCol] = 0.0;
+		}
+		
+		barrier();
+		for (int i = 0; i < subgroupSize; i++)
+		{
+		    dot00 += subgroupShuffle(arow, i) * m_B[i][tileCol];
+        }
+        barrier();
+	}
+    
+	if(globalRow < width0 && globalCol < width2)
+	{
+	    uint indexRes = globalRow * width2 + globalCol;
+	    result[indexRes] = dot00;
+	}
+}
+	  
+void main() {
+	mm_matMul();
+}
